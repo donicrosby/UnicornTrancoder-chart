@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "unicorn-plex.name" . }}-transcoder
+  annotations:
+    transcoder-pod-name-label: transcoder-name
+    transcoder-pod-port: "{{ .Values.transcoding.port }}:32400"
+    transcode-domain: {{ .Values.transcoding.transcodeDomain }}
+  labels:
+    {{- include "unicorn-plex.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.transcoding.replicas }}
+  selector:
+    matchLabels:
+      {{- include "unicorn-plex.transcoderSelectorLabels" . | nindent 6 }}
+  serviceName: "unicorn-transcoder"
+  template:
+    metadata:
+      labels:
+        {{- include "unicorn-plex.transcoderSelectorLabels" . | nindent 8 }}
+      annotations:
+        transcoder-name-label: transcoder-name
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      volumes:
+        - name: plex-transcode
+          persistentVolumeClaim:
+        {{- if .Values.data.transcoding.claimName }}
+            claimName: {{ .Values.data.transcoding.claimName }}
+        {{- else }}
+            claimName: {{ include "unicorn-plex.fullname" . }}-transcode
+        {{- end }}
+      containers:
+        - name: unicorn-transcoder
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.unicornTranscoder.repository}}:{{ .Values.unicornTranscoder.tag }}"
+          imagePullPolicy: {{ .Values.unicornTranscoder.pullPolicy }}
+          env:
+            - name: SERVER_PORT
+              value: "32400"
+            - name: SERVER_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: LOADBALANCER_ADDRESS
+              value: {{ include "unicorn-plex.lb-url" . | trimSuffix "/" | quote }}
+            - name: INSTANCE_ADDRESS
+              value: {{ include "unicorn-plex.transcoder-url" . }}
+            - name:  PLEX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "unicorn-plex.fullname" . }}-x-plex-token
+                  key: X-Plex-Token
+            - name: DEBUG
+              value: "Unicorn*"
+            - name: TRANSCODER_DEBUG
+              value: "true"
+          ports:
+            - name: transcode
+              containerPort: 3000
+              protocol: TCP
+          volumeMounts:
+            - name: plex-transcode
+              mountPath: /opt/UnicornTranscoder/cache
+          # livenessProbe:
+          #   httpGet:
+          #     path: /api/sessions
+          #     port: transcode
+          #   initialDelaySeconds: 10
+          #   timeoutSeconds: 10
+          # readinessProbe:
+          #   httpGet:
+          #     path: /api/sessions
+          #     port: transcode
+          #   initialDelaySeconds: 10
+          #   timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.unicornTranscoder | nindent 12 }}
+      {{- with .Values.nodeSelector.unicornTranscoder }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity.unicornTranscoder }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations.unicornTranscoder }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

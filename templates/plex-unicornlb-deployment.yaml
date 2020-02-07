@@ -1,0 +1,199 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "unicorn-plex.fullname" . }}-loadbalancer
+  labels:
+    {{- include "unicorn-plex.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "unicorn-plex.loadbalancerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "unicorn-plex.loadbalancerSelectorLabels" . | nindent 8 }}
+    spec:
+      volumes:
+        - name: plex-bin
+          emptyDir: {}
+        - name: plex-config
+          persistentVolumeClaim:
+          {{- if .Values.data.plexConfig.claimName }}
+            claimName: {{ .Values.data.plexConfig.claimName }}
+          {{- else }}
+            claimName: {{ include "unicorn-plex.fullname" . }}-config
+          {{- end }}
+        - name: plex-data
+          persistentVolumeClaim:
+          {{- if .Values.data.plexMedia.claimName }}
+            claimName: {{ .Values.data.plexMedia.claimName }}
+          {{- else }}
+            claimName: {{ include "unicorn-plex.fullname" . }}-data
+          {{- end }}
+      {{- if .Values.ingress.tls.secretName }}
+        - name: plex-tls
+          secret:
+            secretName: {{ .Values.ingress.tls.secretName }}
+      {{- end }}
+      initContainers:
+        - name: plex-init
+          image: "{{ .Values.plex.repository }}:{{ .Values.plex.tag }}"
+          imagePullPolicy: {{ .Values.plex.pullPolicy | quote }}
+          volumeMounts:
+            - name: "plex-bin"
+              mountPath: "/plex-bin"
+            - name: "plex-config"
+              mountPath: "/plex-config"
+          {{- if .Values.ingress.tls.secretName }}
+            - name: "plex-tls"
+              mountPath: "/plex-tls"
+          {{- end }}
+          command: ['bash', '-c', 'cp -r /usr/lib/plexmediaserver/* /plex-bin; {{- if .Values.ingress.tls.secretName }}openssl pkcs12 -export -out /plex-config/{{ .Values.ingress.tls.secretName }}.pfx -inkey /plex-tls/tls.key -in /plex-tls/tls.crt -passout pass: ;{{- end }} exit $?']
+      containers:
+        - name: pms
+        {{- if .Values.securityContext }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- end }}
+          image: "{{ .Values.plex.repository }}:{{ .Values.plex.tag }}"
+          imagePullPolicy: {{ .Values.plex.pullPolicy | quote }}
+          env:
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            - name: PLEX_CLAIM
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "unicorn-plex.fullname" . }}-claimtoken
+                  key: claimToken
+            - name: ADVERTISE_IP
+              value: {{ include "unicorn-plex.plex-advertise-ip" . }}
+            - name: LB_URL
+              value: {{ include "unicorn-plex.lb-url" . | quote }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- if .Values.plexUID }}
+            - name: PLEX_UID
+              value: {{ .Values.plexUID }}
+            {{- end }}
+            {{- if .Values.plexGID }}
+            - name: PLEX_GID
+              value: {{ .Values.plexGID }}
+            {{- end }}
+          volumeMounts:
+            - name: plex-bin
+              mountPath: /usr/lib/plexmediaserver
+            - name: plex-config
+              mountPath: /config
+            - name: plex-data
+              mountPath: /data
+          ports:
+            - name: plex-web
+              containerPort: 32400
+              protocol: TCP
+            - name: dnla-server
+              containerPort: 1900
+              protocol: UDP
+            - name: plex-companion
+              containerPort: 3005
+              protocol: TCP
+            - name: plex-discovery
+              containerPort: 5353
+              protocol: UDP
+            - name: plex-roku
+              containerPort: 8324
+              protocol: TCP
+            - name: plex-gdm1
+              containerPort: 32410
+              protocol: UDP
+            - name: plex-gdm2
+              containerPort: 32412
+              protocol: UDP
+            - name: plex-gdm3
+              containerPort: 32413
+              protocol: UDP
+            - name: plex-gdm4
+              containerPort: 32414
+              protocol: UDP
+            - name: dnla-server2
+              containerPort: 32469
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /identity
+              port: plex-web
+            initialDelaySeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /identity
+              port: plex-web
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.plex | nindent 12 }}
+        - name: unicorn-loadbalancer
+          image: "{{ .Values.unicornLoadbalancer.repository }}:{{ .Values.unicornLoadbalancer.tag }}"
+          env:
+            - name: SERVER_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVER_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: SERVER_PUBLIC
+              value: "http://{{ .Values.service.loadbalancerIP }}:{{ .Values.service.port }}/"
+            - name: PLEX_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PLEX_PORT
+              value: "32400"
+            - name: PLEX_PATH_SESSIONS
+              value: /config/Library/Application Support/Plex Media Server/Cache/Transcode/Sessions
+            - name: DATABASE_SQLITE_PATH
+              value: /config/Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db
+            - name: LB_URL
+              value: {{ include "unicorn-plex.lb-url" . | quote }}
+            - name: DEBUG
+              value: "*"
+          volumeMounts:
+            - name: plex-bin
+              mountPath: /usr/lib/plexmediaserver
+            - name: plex-config
+              mountPath: /config
+            - name: plex-data
+              mountPath: /data
+          ports:
+            - name: lb-port
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          # readinessProbe:
+          #   httpGet:
+          #     path: /api/stats
+          #     port: lb-port
+          #   initialDelaySeconds: 15
+          #   timeoutSeconds: 5
+          # livenessProbe:
+          #   httpGet:
+          #     path: /api/stats
+          #     port: lb-port
+          #   initialDelaySeconds: 10
+          #   timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.unicornLoadbalancer | nindent 12 }}
+      {{- with .Values.nodeSelector.unicornLoadbalancer }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity.unicornLoadbalancer }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations.unicornLoadbalancer }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

@@ -1,0 +1,82 @@
+apiVersion: metac.openebs.io/v1alpha1
+kind: DecoratorController
+metadata:
+  name: ingress-per-transcoder
+  labels:
+    {{- include "unicorn-plex.labels" . | nindent 4 }}
+spec:
+  resources:
+  - apiVersion: apps/v1
+    resource: statefulsets
+    annotationSelector:
+      matchExpressions:
+      - {key: transcoder-pod-name-label, operator: Exists}
+      - {key: transcoder-pod-port, operator: Exists}
+      - {key: transcode-domain, operator: Exists}
+  attachments:
+  - apiVersion: v1
+    resource: services
+  - apiVersion: "extensions/v1beta1"
+    resource: ingresses
+  hooks:
+    sync:
+      webhook:
+        url: http://transcoder-controller.{{ .Release.Namespace }}.svc.cluster.local/sync-transcoder-ingress
+    finalize:
+      webhook:
+        url: http://transcoder-controller.{{ .Release.Namespace }}.svc.cluster.local/finalize-transcoder-ingress
+---
+apiVersion: metac.openebs.io/v1alpha1
+kind: DecoratorController
+metadata:
+  name: transcoder-name-label
+  labels:
+    {{- include "unicorn-plex.labels" . | nindent 4 }}
+spec:
+  resources:
+  - apiVersion: v1
+    resource: pods
+    labelSelector:
+      matchExpressions:
+      - {key: transcoder-name, operator: DoesNotExist}
+    annotationSelector:
+      matchExpressions:
+      - {key: transcoder-name-label, operator: Exists}
+  hooks:
+    sync:
+      webhook:
+        url: http://transcoder-controller.{{ .Release.Namespace }}.svc.cluster.local/sync-transcoder-labels
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transcoder-controller
+  labels:
+    {{- include "unicorn-plex.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "unicorn-plex.transcoderControllerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "unicorn-plex.transcoderControllerSelectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: hooks
+        image: donicrosby/unicorn-plex-transcode-controller:latest
+        imagePullPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transcoder-controller
+  labels:
+    {{- include "unicorn-plex.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "unicorn-plex.transcoderControllerSelectorLabels" . | nindent 8 }}
+  ports:
+  - port: 80
+    targetPort: 80

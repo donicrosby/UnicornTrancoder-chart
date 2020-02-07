@@ -1,0 +1,55 @@
+---
+{{- if not (.Values.data.plexConfig.claimName) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "unicorn-plex.fullname" . }}-config
+  labels:
+    {{- include "unicorn-plex.loadbalancerSelectorLabels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.data.plexConfig.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.data.plexConfig.size | quote }}
+{{- if .Values.data.plexConfig.storageClass }}
+  storageClassName: {{ .Values.data.plexConfig.storageClass | quote }}
+{{- end }}
+---
+{{- end }}
+{{- if not (.Values.data.plexMedia.claimName) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "unicorn-plex.fullname" . }}-data
+  labels:
+    {{- include "unicorn-plex.loadbalancerSelectorLabels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.data.plexMedia.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.data.plexMedia.size | quote }}
+{{- if .Values.data.plexMedia.storageClass }}
+  storageClassName: {{ .Values.data.plexMedia.storageClass | quote }}
+{{- end }}
+---
+{{- end }}
+{{- if not (.Values.data.transcoding.claimName) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "unicorn-plex.fullname" . }}-transcode
+  labels:
+    {{- include "unicorn-plex.transcoderSelectorLabels" . | nindent 4 }}
+spec:
+  accessModes:
+    - "ReadWriteMany"
+  resources:
+    requests:
+      storage: {{ .Values.data.transcoding.size | quote }}
+{{- if .Values.data.transcoding.storageClass }}
+  storageClassName: {{ .Values.data.transcoding.storageClass | quote }}
+{{- end }}
+---
+{{- end }}

@@ -1,0 +1,130 @@
+# Default values for unicorn-plex.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+plex:
+  repository: plexinc/pms-docker
+  tag: 1.18.5.2309-f5213a238
+  pullPolicy: IfNotPresent
+
+unicornLoadbalancer:
+  repository: magn2o/unicorn-loadbalancer
+  tag: latest
+  pullPolicy: IfNotPresent
+
+unicornTranscoder:
+  repository: magn2o/unicorn-transcoder
+  tag: latest
+  imagePullPolicy: IfNotPresent
+
+# Plex Environment Config
+timezone: Etc/UTC
+XPlexToken: p_dummyplextoken123
+claimToken: plex---dummyclaim-123
+plexHostname: Unicorn-Plex #Set hostname/friendly name on plex server
+plexUID:
+plexGID:
+
+# Transcoding Pods Configuration
+transcoding:
+  # If HPA is set to True the minReplicas is set to replicas
+  # If HPA is set to False deployment will only deploy the number
+  # of replicas given
+  hpa: false
+  hpaCPUPercent: 50
+  replicas: 5
+  maxReplicas: 10
+  port: 443
+
+data:
+  # Plex Configuration
+  plexConfig:
+    # If claimName is defined then the storage class and size are ignored
+    storageClass:
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    claimName:
+
+  plexMedia:
+    # If claimName is defined then the storage class and size are ignored
+    storageClass:
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    claimName:
+
+  transcoding:
+    # If claimName is defined then the storage class and size are ignored
+    storageClass:
+    size: 10Gi
+    claimName:
+
+  # plex-config-pvc:
+imagePullSecrets: []
+## nameOverride: ""
+## fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name:
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: Loadbalancer
+  loadbalancerIP:
+  port: 3001
+  annotations: {}
+
+ingress:
+  enabled: false
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  host: chart-example.local
+  tls:
+    host: chart-example.local
+  # secretName:
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  plex: {}
+  unicornLoadbalancer: {}
+  unicornTranscoder: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector:
+  unicornLoadbalancer: {}
+  unicornTranscoder: {}
+
+tolerations:
+  unicornLoadbalancer: []
+  unicornTranscoder: []
+
+affinity:
+  unicornLoadbalancer: {}
+  unicornTranscoder: {}
